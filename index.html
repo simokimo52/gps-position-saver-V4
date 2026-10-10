@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/jpeg" href="/gps_saver_icon_1791495248809.jpg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>GPS Position Saver</title>
+    <meta name="description" content="Offline GPS position saver with one-tap bookmarking, place details, interactive maps, and location sharing." />
+    <meta property="og:title" content="GPS Position Saver" />
+    <meta property="og:description" content="Offline GPS position saver with one-tap bookmarking, place details, interactive maps, and location sharing." />
+    <meta name="theme-color" content="#0D47A1" />
+    <script>
+      (function () {
+        try {
+          var _currentFetch = window.fetch ? window.fetch.bind(window) : undefined;
+          Object.defineProperty(window, 'fetch', {
+            get: function () {
+              return _currentFetch;
+            },
+            set: function (fn) {
+              _currentFetch = fn;
+            },
+            configurable: true,
+            enumerable: true,
+          });
+        } catch (e) {
+          // Ignore
+        }
+      })();
+    </script>
+    <!-- Leaflet Map Styles -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  </head>
+  <body class="bg-[#F8F9FF] text-[#191C20] antialiased select-none">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

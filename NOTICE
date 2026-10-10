@@ -1,0 +1,15 @@
+GPS Position Saver
+Copyright (C) 2026 SimoDev (simoinfopro@gmail.com)
+All rights reserved.
+
+This product includes open-source software and architectural concepts developed by:
+- OpenTracks (https://github.com/OpenTracksApp/OpenTracks)
+  Copyright (C) 2019-2024 OpenTracks authors
+- Google My Tracks (https://code.google.com/archive/p/mytracks/)
+  Copyright (C) 2010 Google Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
