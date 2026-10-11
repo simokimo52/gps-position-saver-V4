@@ -15,9 +15,6 @@ concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dorg.gradle.daemon=false
-
 jobs:
   build:
     name: Build & test
@@ -44,8 +41,20 @@ jobs:
       - name: Ensure Android SDK components
         run: |
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "${SDKMANAGER}" ]; then
+            echo "::error::sdkmanager not found at ${SDKMANAGER}"
+            exit 1
+          fi
+
+          # Runner images already ship these; this is a safety net. `yes` receives
+          # SIGPIPE as soon as sdkmanager stops reading stdin, so the pipelines are
+          # tolerated here (GitHub's default shell runs with `pipefail`).
           yes | "${SDKMANAGER}" --licenses > /dev/null 2>&1 || true
-          yes | "${SDKMANAGER}" "platforms;android-35" "build-tools;35.0.0"
+          yes | "${SDKMANAGER}" "platforms;android-35" "build-tools;35.0.0" || true
+
+          # Fail loudly if what the build actually needs is still missing.
+          test -d "${ANDROID_HOME}/platforms/android-35"
+          test -n "$(ls -d "${ANDROID_HOME}"/build-tools/*/ 2>/dev/null)"
 
       # The app signs with a keystore that is git-ignored. Prefer a repository
       # secret so the signature stays stable across runs; otherwise fall back to
@@ -92,8 +101,22 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk \
              "$OUT/gps-position-saver-${VERSION}-${SHORT_SHA}-release.apk"
 
-          # Fail loudly if anything came out unsigned.
-          APKSIGNER=$(ls "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -1)
+          # Fail loudly if anything came out unsigned. Walk build-tools newest-first
+          # and take the first that actually ships apksigner, so a partial install
+          # cannot trip `set -e` before the real checks run.
+          APKSIGNER=""
+          for dir in $(ls -d "${ANDROID_HOME}"/build-tools/*/ 2>/dev/null | sort -Vr); do
+            if [ -x "${dir}apksigner" ]; then
+              APKSIGNER="${dir}apksigner"
+              break
+            fi
+          done
+          if [ -z "${APKSIGNER}" ]; then
+            echo "::error::Could not find an executable apksigner under ${ANDROID_HOME}/build-tools"
+            exit 1
+          fi
+          echo "using ${APKSIGNER}"
+
           for apk in "$OUT"/*.apk; do
             "${APKSIGNER}" verify --verbose "$apk" > /dev/null
             echo "verified signature: $apk"
