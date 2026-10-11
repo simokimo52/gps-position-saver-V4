@@ -10,12 +10,17 @@ import com.simodev.gpspositionsaver.data.model.Group
 import com.simodev.gpspositionsaver.data.model.LocationState
 import com.simodev.gpspositionsaver.data.model.Place
 import com.simodev.gpspositionsaver.data.model.ShareSession
+import com.simodev.gpspositionsaver.data.model.Track
+import com.simodev.gpspositionsaver.data.model.TrackPoint
 import com.simodev.gpspositionsaver.data.model.UnitSystem
+import com.simodev.gpspositionsaver.geo.GeoUtils
+import com.simodev.gpspositionsaver.geo.TrackComputer
 import com.simodev.gpspositionsaver.io.ExportCodecs
 import com.simodev.gpspositionsaver.io.ExportFormat
 import com.simodev.gpspositionsaver.io.ImportResult
 import com.simodev.gpspositionsaver.location.GeocoderClient
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,9 +36,32 @@ data class AppUiState(
     val places: List<Place> = emptyList(),
     val groups: List<Group> = emptyList(),
     val sessions: List<ShareSession> = emptyList(),
+    val tracks: List<Track> = emptyList(),
     val settings: AppSettings = AppSettings(),
     val activeSession: ShareSession? = null,
 )
+
+/** State of the in-progress track recorder. */
+data class TrackRecorderState(
+    val isRecording: Boolean = false,
+    val isPaused: Boolean = false,
+    val startedAt: Long = 0L,
+    /** Recorded time in ms excluding pauses (snapshot; live getter adds the current segment). */
+    val accumulatedMs: Long = 0L,
+    /** Wall-clock start of the current (unpaused) segment. */
+    val segmentStartMs: Long = 0L,
+    val points: List<TrackPoint> = emptyList(),
+    val currentDistance: Double = 0.0,
+    val currentMaxSpeedMs: Double? = null,
+) {
+    /** Elapsed recorded time: live while recording, frozen after pause/stop. */
+    val elapsedMs: Long
+        get() {
+            if (!isRecording) return accumulatedMs
+            return if (isPaused) accumulatedMs
+            else accumulatedMs + (System.currentTimeMillis() - segmentStartMs)
+        }
+}
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -70,16 +98,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val uiState: StateFlow<AppUiState> = combine(
-        repo.places, repo.groups, repo.sessions, settingsStore.settings, ticker,
-    ) { places, groups, sessions, settings, now ->
+        repo.places, repo.groups, repo.sessions, repo.tracks, settingsStore.settings,
+    ) { places, groups, sessions, tracks, settings ->
         AppUiState(
             places = places,
             groups = groups,
             sessions = sessions,
+            tracks = tracks,
             settings = settings,
-            activeSession = sessions.firstOrNull { it.isActive && it.expiresAt > now },
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
+    }
+        .combine(ticker) { state, now ->
+            state.copy(
+                activeSession = state.sessions.firstOrNull { it.isActive && it.expiresAt > now },
+            )
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
+
+    // ---- Track recorder ----
+
+    private val _recorder = MutableStateFlow(TrackRecorderState())
+    val recorderState: StateFlow<TrackRecorderState> = _recorder
+
+    /** Points accumulated during the active recording. Written to the DB on stop. */
+    private val pendingPoints = mutableListOf<TrackPoint>()
 
     init {
         viewModelScope.launch {
@@ -96,8 +138,153 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 .flatMapLatest { granted ->
                     if (granted) locationRepo.locationUpdates() else flowOf()
                 }
-                .collect { _location.value = it }
+                .collect { loc ->
+                    _location.value = loc
+                    if (_recorder.value.isRecording && !_recorder.value.isPaused) {
+                        appendTrackPoint(loc)
+                    }
+                }
         }
+    }
+
+    private fun appendTrackPoint(loc: LocationState) {
+        val now = System.currentTimeMillis()
+        val last = pendingPoints.lastOrNull()
+
+        // Sample at most once per second and skip sub-meter jitter.
+        if (last != null && now - last.timestamp < 1_000) return
+        val speedMs = if (last != null) {
+            val dtSec = (now - last.timestamp).coerceAtLeast(1) / 1000.0
+            val d = GeoUtils.calculateDistance(
+                last.latitude, last.longitude, loc.latitude, loc.longitude,
+            )
+            if (d < 2.0) return // skip sub-meter jitter
+            d / dtSec
+        } else {
+            null
+        }
+
+        pendingPoints += TrackPoint(
+            trackId = 0L, // assigned when the track row is created on stop
+            latitude = loc.latitude,
+            longitude = loc.longitude,
+            altitude = loc.altitude,
+            accuracy = loc.accuracy,
+            speedMs = speedMs,
+            timestamp = now,
+        )
+        publishRecorderState()
+    }
+
+    private fun publishRecorderState() {
+        val current = _recorder.value
+        val stats = TrackComputer.computeStats(pendingPoints)
+        _recorder.value = current.copy(
+            points = pendingPoints.toList(),
+            currentDistance = stats.distanceMeters,
+            currentMaxSpeedMs = stats.maxSpeedMs,
+        )
+    }
+
+    fun startTrackRecording() {
+        if (_recorder.value.isRecording) return
+        pendingPoints.clear()
+        val now = System.currentTimeMillis()
+        _recorder.value = TrackRecorderState(
+            isRecording = true,
+            isPaused = false,
+            startedAt = now,
+            accumulatedMs = 0L,
+            segmentStartMs = now,
+        )
+        // Seed with the current fix so the track always has a start point.
+        val loc = _location.value
+        if (!loc.isSimulated && loc.latitude != 0.0) appendTrackPoint(loc)
+    }
+
+    fun pauseTrackRecording() {
+        val current = _recorder.value
+        if (!current.isRecording || current.isPaused) return
+        val now = System.currentTimeMillis()
+        _recorder.value = current.copy(
+            isPaused = true,
+            accumulatedMs = current.accumulatedMs + (now - current.segmentStartMs),
+        )
+    }
+
+    fun resumeTrackRecording() {
+        val current = _recorder.value
+        if (!current.isRecording || !current.isPaused) return
+        val now = System.currentTimeMillis()
+        _recorder.value = current.copy(
+            isPaused = false,
+            segmentStartMs = now,
+        )
+    }
+
+    fun stopTrackRecording() {
+        if (!_recorder.value.isRecording) return
+        val current = _recorder.value
+        val points = pendingPoints.toList()
+        pendingPoints.clear()
+        _recorder.value = TrackRecorderState()
+        if (points.isEmpty()) return
+
+        val recordedMs = current.accumulatedMs +
+            if (current.isPaused) 0L else (System.currentTimeMillis() - current.segmentStartMs)
+
+        viewModelScope.launch {
+            val stats = TrackComputer.computeStats(points)
+            val trackId = repo.addTrack(
+                Track(
+                    id = 0,
+                    name = defaultTrackName(),
+                    startTime = points.first().timestamp,
+                    endTime = points.last().timestamp,
+                    distanceMeters = stats.distanceMeters,
+                    durationMs = recordedMs,
+                    maxSpeedMs = stats.maxSpeedMs,
+                    avgSpeedMs = stats.avgSpeedMs,
+                    startLatitude = points.first().latitude,
+                    startLongitude = points.first().longitude,
+                )
+            )
+            repo.addTrackPoints(points.map { it.copy(trackId = trackId) })
+            showToast("Track saved")
+        }
+    }
+
+    fun cancelTrackRecording() {
+        pendingPoints.clear()
+        _recorder.value = TrackRecorderState()
+    }
+
+    fun deleteTrack(id: Long) {
+        viewModelScope.launch {
+            repo.deleteTrack(id)
+            showToast("Track deleted")
+        }
+    }
+
+    fun renameTrack(track: Track, newName: String) {
+        val name = newName.trim().ifBlank { return }
+        viewModelScope.launch {
+            repo.updateTrack(track.copy(name = name))
+            showToast("Track renamed")
+        }
+    }
+
+    private fun defaultTrackName(): String {
+        val fmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
+        return "Track ${fmt.format(java.util.Date())}"
+    }
+
+    fun pointsForTrack(trackId: Long): Flow<List<TrackPoint>> = repo.pointsForTrack(trackId)
+
+    suspend fun trackGpx(trackId: Long): String? {
+        val track = repo.trackById(trackId) ?: return null
+        val points = repo.pointsForTrackSync(trackId)
+        return ExportCodecs.generateTrackGpx(track, points)
     }
 
     fun onPermissionResult(granted: Boolean) {

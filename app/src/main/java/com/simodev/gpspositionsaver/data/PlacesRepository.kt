@@ -4,10 +4,12 @@ import com.simodev.gpspositionsaver.data.db.AppDatabase
 import com.simodev.gpspositionsaver.data.model.Group
 import com.simodev.gpspositionsaver.data.model.Place
 import com.simodev.gpspositionsaver.data.model.ShareSession
+import com.simodev.gpspositionsaver.data.model.Track
+import com.simodev.gpspositionsaver.data.model.TrackPoint
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Single source of truth for places, groups, and share sessions.
+ * Single source of truth for places, groups, share sessions, and tracks.
  * Replaces the localStorage `StorageService` from the web edition.
  */
 class PlacesRepository(private val db: AppDatabase) {
@@ -15,10 +17,15 @@ class PlacesRepository(private val db: AppDatabase) {
     private val placeDao = db.placeDao()
     private val groupDao = db.groupDao()
     private val sessionDao = db.sessionDao()
+    private val trackDao = db.trackDao()
+    private val trackPointDao = db.trackPointDao()
 
     val places: Flow<List<Place>> = placeDao.observeAll()
     val groups: Flow<List<Group>> = groupDao.observeAll()
     val sessions: Flow<List<ShareSession>> = sessionDao.observeAll()
+    val tracks: Flow<List<Track>> = trackDao.observeAll()
+
+    fun pointsForTrack(trackId: Long): Flow<List<TrackPoint>> = trackPointDao.observeByTrack(trackId)
 
     suspend fun seedIfEmpty() {
         if (groupDao.count() > 0) return
@@ -86,8 +93,33 @@ class PlacesRepository(private val db: AppDatabase) {
 
     suspend fun stopAllSessions() = sessionDao.deactivateAll()
 
+    // ---- Tracks ----
+
+    suspend fun addTrack(track: Track): Long = trackDao.insert(track)
+
+    suspend fun updateTrack(track: Track) = trackDao.update(track)
+
+    suspend fun deleteTrack(id: Long) {
+        trackDao.deleteById(id)
+        trackPointDao.deleteByTrack(id)
+    }
+
+    suspend fun trackById(id: Long): Track? = trackDao.getById(id)
+
+    suspend fun getAllTracks(): List<Track> = trackDao.getAll()
+
+    suspend fun addTrackPoints(points: List<TrackPoint>) {
+        if (points.isEmpty()) return
+        trackPointDao.insertAll(points)
+    }
+
+    suspend fun pointsForTrackSync(trackId: Long): List<TrackPoint> =
+        trackPointDao.getByTrack(trackId)
+
     suspend fun clearAllData() {
         placeDao.deleteAll()
         sessionDao.deleteAll()
+        trackDao.deleteAll()
+        trackPointDao.deleteAll()
     }
 }

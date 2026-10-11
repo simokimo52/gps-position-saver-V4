@@ -2,6 +2,8 @@ package com.simodev.gpspositionsaver.io
 
 import com.simodev.gpspositionsaver.data.model.Group
 import com.simodev.gpspositionsaver.data.model.Place
+import com.simodev.gpspositionsaver.data.model.Track
+import com.simodev.gpspositionsaver.data.model.TrackPoint
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -105,6 +107,30 @@ object ExportCodecs {
             )
             append("\n")
         }
+    }
+
+    /** GPX track export: a single `<trk>` with one `<trkseg>` of points. */
+    fun generateTrackGpx(track: Track, points: List<TrackPoint>): String = buildString {
+        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        append("<gpx version=\"1.1\" creator=\"GPS Position Saver\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+        append("  <metadata>\n    <name>${escapeXml(track.name)}</name>\n")
+        append("    <time>${isoTime(track.startTime)}</time>\n  </metadata>\n")
+        append("  <trk>\n")
+        append("    <name>${escapeXml(track.name)}</name>\n")
+        track.endTime?.let { append("    <time>${isoTime(it)}</time>\n") }
+        if (track.distanceMeters > 0) {
+            append("    <desc>Distance: ${"%.1f".format(track.distanceMeters)} m</desc>\n")
+        }
+        append("    <trkseg>\n")
+        for (p in points) {
+            append("      <trkpt lat=\"${p.latitude}\" lon=\"${p.longitude}\">\n")
+            p.altitude?.let { append("        <ele>$it</ele>\n") }
+            append("        <time>${isoTime(p.timestamp)}</time>\n")
+            append("      </trkpt>\n")
+        }
+        append("    </trkseg>\n")
+        append("  </trk>\n")
+        append("</gpx>")
     }
 
     fun generateJson(places: List<Place>, groups: List<Group>): String {

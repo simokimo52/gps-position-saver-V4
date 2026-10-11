@@ -11,6 +11,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
@@ -43,10 +45,13 @@ fun MapScreen(
     places: List<Place>,
     groups: List<Group>,
     onOpenPlace: (Place) -> Unit,
+    tracks: List<com.simodev.gpspositionsaver.data.model.Track> = emptyList(),
+    trackPoints: Map<Long, List<com.simodev.gpspositionsaver.data.model.TrackPoint>> = emptyMap(),
 ) {
     var layer by remember { mutableStateOf(MapLayerType.STANDARD) }
     var layerMenu by remember { mutableStateOf(false) }
     var fitRequest by remember { mutableIntStateOf(0) }
+    var showTracks by remember { mutableStateOf(true) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         OsmMapView(
@@ -58,6 +63,9 @@ fun MapScreen(
             layerType = layer,
             onOpenPlace = onOpenPlace,
             fitRequest = fitRequest,
+            tracks = if (showTracks) tracks else emptyList(),
+            trackPoints = trackPoints,
+            showTrackOverlay = showTracks,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -98,6 +106,21 @@ fun MapScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ) {
                     Icon(Icons.Default.Layers, contentDescription = "Fit markers")
+                }
+            }
+
+            if (tracks.isNotEmpty()) {
+                Box(modifier = Modifier.padding(top = 12.dp)) {
+                    SmallFloatingActionButton(
+                        onClick = { showTracks = !showTracks },
+                        containerColor = if (showTracks) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surface,
+                    ) {
+                        Icon(
+                            if (showTracks) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = "Toggle tracks",
+                        )
+                    }
                 }
             }
 

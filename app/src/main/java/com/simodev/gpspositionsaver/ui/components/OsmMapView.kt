@@ -14,6 +14,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.simodev.gpspositionsaver.data.model.Group
 import com.simodev.gpspositionsaver.data.model.MapLayerType
 import com.simodev.gpspositionsaver.data.model.Place
+import com.simodev.gpspositionsaver.data.model.Track
+import com.simodev.gpspositionsaver.data.model.TrackPoint
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
@@ -21,6 +23,7 @@ import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 
 private val SATELLITE_SOURCE = XYTileSource(
     "EsriWorldImagery", 0, 19, 256, ".jpg",
@@ -38,7 +41,7 @@ private fun pinDrawable(color: Int): Drawable = GradientDrawable().apply {
     setSize(56, 56)
 }
 
-/** Compose wrapper around osmdroid's MapView: markers, layers, current position. */
+/** Compose wrapper around osmdroid's MapView: markers, layers, current position, tracks. */
 @Composable
 fun OsmMapView(
     currentLat: Double,
@@ -50,6 +53,9 @@ fun OsmMapView(
     onOpenPlace: (Place) -> Unit,
     modifier: Modifier = Modifier,
     fitRequest: Int = 0,
+    tracks: List<Track> = emptyList(),
+    trackPoints: Map<Long, List<TrackPoint>> = emptyMap(),
+    showTrackOverlay: Boolean = true,
 ) {
     val context = LocalContext.current
 
@@ -79,8 +85,13 @@ fun OsmMapView(
         mapView.invalidate()
     }
 
-    // Rebuild markers whenever the place set, groups, or position changes.
-    LaunchedEffect(places, groups, currentLat, currentLng, fitRequest) {
+    // Rebuild markers whenever the place set, groups, position, or track data changes.
+    // Note: `trackPoints` may be a SnapshotStateMap mutated in place, so key on its
+    // content-derived copy to guarantee the effect re-runs when points arrive.
+    LaunchedEffect(
+        places, groups, currentLat, currentLng, fitRequest, tracks, trackPoints.toMap(),
+        showTrackOverlay,
+    ) {
         mapView.overlays.clear()
         val defaultPin = Color.parseColor("#1E88E5")
         val groupColors = groups.associate { it.id to parseColorInt(it.colorHex, defaultPin) }
@@ -113,14 +124,34 @@ fun OsmMapView(
             )
         }
 
-        if (fitRequest > 0 && places.isNotEmpty()) {
-            val points = places.map { GeoPoint(it.latitude, it.longitude) } + GeoPoint(currentLat, currentLng)
-            runCatching {
-                mapView.zoomToBoundingBox(
-                    BoundingBox.fromGeoPoints(points),
-                    true,
-                    96,
-                )
+        // Draw saved-track polylines (above places, below markers).
+        if (showTrackOverlay) {
+            tracks.forEach { track ->
+                val pts = trackPoints[track.id]
+                if (!pts.isNullOrEmpty()) {
+                    mapView.overlays.add(
+                        Polyline(mapView).apply {
+                            setPoints(pts.map { GeoPoint(it.latitude, it.longitude) })
+                            color = Color.parseColor("#E53935")
+                            width = 6f
+                        }
+                    )
+                }
+            }
+        }
+
+        if (fitRequest > 0) {
+            val markerPoints = places.map { GeoPoint(it.latitude, it.longitude) }.toMutableList()
+            if (currentLat != 0.0 || currentLng != 0.0) markerPoints += GeoPoint(currentLat, currentLng)
+            trackPoints.values.flatten().forEach { markerPoints += GeoPoint(it.latitude, it.longitude) }
+            if (markerPoints.isNotEmpty()) {
+                runCatching {
+                    mapView.zoomToBoundingBox(
+                        BoundingBox.fromGeoPoints(markerPoints),
+                        true,
+                        96,
+                    )
+                }
             }
         } else {
             mapView.controller.setCenter(GeoPoint(currentLat, currentLng))

@@ -50,6 +50,34 @@ data class ShareSession(
     val lastUpdated: Long? = null,
 )
 
+/** A recorded GPS track (path captured over time). */
+@Entity(tableName = "tracks")
+data class Track(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long,
+    val name: String,
+    val startTime: Long,
+    val endTime: Long? = null,
+    val distanceMeters: Double = 0.0,
+    val durationMs: Long = 0L,
+    val maxSpeedMs: Double? = null,
+    val avgSpeedMs: Double? = null,
+    val startLatitude: Double,
+    val startLongitude: Double,
+)
+
+/** A single GPS sample belonging to a Track. */
+@Entity(tableName = "track_points", primaryKeys = ["trackId", "timestamp"])
+data class TrackPoint(
+    val trackId: Long,
+    val latitude: Double,
+    val longitude: Double,
+    val altitude: Double? = null,
+    val accuracy: Double? = null,
+    val speedMs: Double? = null,
+    val timestamp: Long,
+)
+
 enum class CoordinateFormat(val displayName: String, val example: String) {
     DECIMAL_DEGREES("Decimal Degrees (DD)", "48.858370° N, 2.294481° E"),
     DEGREES_MINUTES_SECONDS("Degrees, Minutes, Seconds (DMS)", "48° 51' 30.1\" N"),
@@ -69,7 +97,7 @@ data class AppSettings(
 )
 
 /** Bottom-navigation destinations. */
-enum class ScreenTab { HOME, PLACES, MAP, LIVE, SETTINGS }
+enum class ScreenTab { HOME, PLACES, MAP, LIVE, SETTINGS, TRACK }
 
 /** Base map style in the map view. */
 enum class MapLayerType { STANDARD, SATELLITE }

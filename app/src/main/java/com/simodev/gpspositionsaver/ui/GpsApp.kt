@@ -18,10 +18,12 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -30,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import com.simodev.gpspositionsaver.data.model.Place
 import com.simodev.gpspositionsaver.data.model.ScreenTab
 import com.simodev.gpspositionsaver.ui.screens.HomeScreen
@@ -38,6 +42,7 @@ import com.simodev.gpspositionsaver.ui.screens.MapScreen
 import com.simodev.gpspositionsaver.ui.screens.PlaceDetailDialog
 import com.simodev.gpspositionsaver.ui.screens.PlacesScreen
 import com.simodev.gpspositionsaver.ui.screens.SettingsScreen
+import com.simodev.gpspositionsaver.ui.screens.TrackScreen
 
 private data class NavItem(val tab: ScreenTab, val label: String, val icon: ImageVector)
 
@@ -81,11 +86,15 @@ fun GpsApp(vm: AppViewModel = viewModel()) {
         }
     }
 
+    // Collect points for each saved track so replay/preview sees the polylines.
+    val trackPoints = rememberTrackPoints(vm, state.tracks)
+
     val items = listOf(
         NavItem(ScreenTab.HOME, "Save", Icons.Default.Bookmark),
         NavItem(ScreenTab.PLACES, "Places", Icons.Default.List),
         NavItem(ScreenTab.MAP, "Map", Icons.Default.Map),
         NavItem(ScreenTab.LIVE, "Live", Icons.Default.Radio),
+        NavItem(ScreenTab.TRACK, "Tracks", Icons.Default.Route),
         NavItem(ScreenTab.SETTINGS, "Settings", Icons.Default.Settings),
     )
 
@@ -146,6 +155,8 @@ fun GpsApp(vm: AppViewModel = viewModel()) {
                     places = state.places,
                     groups = state.groups,
                     onOpenPlace = { selectedPlace = it },
+                    tracks = state.tracks,
+                    trackPoints = trackPoints,
                 )
 
                 ScreenTab.LIVE -> LiveShareScreen(
@@ -153,6 +164,13 @@ fun GpsApp(vm: AppViewModel = viewModel()) {
                     location = location,
                     activeSession = state.activeSession,
                     sessions = state.sessions,
+                )
+
+                ScreenTab.TRACK -> TrackScreen(
+                    vm = vm,
+                    settings = state.settings,
+                    tracks = state.tracks,
+                    trackPoints = trackPoints,
                 )
 
                 ScreenTab.SETTINGS -> SettingsScreen(
@@ -177,4 +195,35 @@ fun GpsApp(vm: AppViewModel = viewModel()) {
             onClose = { selectedPlace = null },
         )
     }
+}
+
+/**
+ * Collects the point list for each saved track from the DB and keeps it in a
+ * map keyed by track id. Observes each track's point flow so newly saved tracks
+ * show their polylines without a second app open.
+ */
+@Composable
+private fun rememberTrackPoints(
+    vm: AppViewModel,
+    tracks: List<com.simodev.gpspositionsaver.data.model.Track>,
+): Map<Long, List<com.simodev.gpspositionsaver.data.model.TrackPoint>> {
+    val ids = tracks.map { it.id }
+    val trackPoints = remember {
+        mutableStateMapOf<Long, List<com.simodev.gpspositionsaver.data.model.TrackPoint>>()
+    }
+
+    LaunchedEffect(ids) {
+        // Drop entries for tracks that no longer exist (deleted).
+        trackPoints.keys.retainAll(ids.toSet())
+        coroutineScope {
+            ids.forEach { id ->
+                launch {
+                    vm.pointsForTrack(id).collect { points ->
+                        if (points.isNotEmpty()) trackPoints[id] = points
+                    }
+                }
+            }
+        }
+    }
+    return trackPoints
 }

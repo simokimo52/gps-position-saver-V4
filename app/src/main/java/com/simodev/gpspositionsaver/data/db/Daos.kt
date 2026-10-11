@@ -8,6 +8,8 @@ import androidx.room.Update
 import com.simodev.gpspositionsaver.data.model.Group
 import com.simodev.gpspositionsaver.data.model.Place
 import com.simodev.gpspositionsaver.data.model.ShareSession
+import com.simodev.gpspositionsaver.data.model.Track
+import com.simodev.gpspositionsaver.data.model.TrackPoint
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -62,6 +64,51 @@ interface GroupDao {
 
     @Query("DELETE FROM groups WHERE id = :id")
     suspend fun deleteById(id: Long)
+}
+
+@Dao
+interface TrackDao {
+    @Query("SELECT * FROM tracks ORDER BY startTime DESC")
+    fun observeAll(): Flow<List<Track>>
+
+    @Query("SELECT * FROM tracks WHERE id = :id")
+    suspend fun getById(id: Long): Track?
+
+    @Query("SELECT * FROM tracks ORDER BY startTime DESC")
+    suspend fun getAll(): List<Track>
+
+    @Insert
+    suspend fun insert(track: Track): Long
+
+    @Update
+    suspend fun update(track: Track)
+
+    @Query("DELETE FROM tracks WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM tracks")
+    suspend fun deleteAll()
+
+    @Query("SELECT COUNT(*) FROM tracks")
+    suspend fun count(): Int
+}
+
+@Dao
+interface TrackPointDao {
+    @Query("SELECT * FROM track_points WHERE trackId = :trackId ORDER BY timestamp ASC")
+    fun observeByTrack(trackId: Long): Flow<List<TrackPoint>>
+
+    @Query("SELECT * FROM track_points WHERE trackId = :trackId ORDER BY timestamp ASC")
+    suspend fun getByTrack(trackId: Long): List<TrackPoint>
+
+    @Insert
+    suspend fun insertAll(points: List<TrackPoint>)
+
+    @Query("DELETE FROM track_points WHERE trackId = :trackId")
+    suspend fun deleteByTrack(trackId: Long)
+
+    @Query("DELETE FROM track_points")
+    suspend fun deleteAll()
 }
 
 @Dao
