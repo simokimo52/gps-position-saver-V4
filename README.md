@@ -1,63 +1,74 @@
-# GPS Position Saver 📍 (Web Edition)
+# GPS Position Saver 📍
 
-A high-precision, 100% offline-capable GPS bookmarking and position tracking application rewritten in **React**, **TypeScript**, **Vite**, and **Tailwind CSS**, ported from the original Android application.
+A high-precision, 100% offline-capable GPS bookmarking and position tracking application.
+Fully **native Android** — Kotlin + Jetpack Compose. No WebView.
 
-## 🌟 Key Features
+## Tech Stack
 
-### 1. One-Tap Offline Position Save
-- **Instantaneous Acquisition**: Tap the prominent "Save Position" button to obtain a high-accuracy GPS fix with realistic satellite lock acquisition states.
-- **Dual Location Engine**: High-accuracy `navigator.geolocation` with fallback simulation and manual coordinate entry for testing in restricted iframe environments.
-- **Accuracy Safeguards**: Accuracy indicator badge (green for $\le 15$m, amber for $> 15$m) with altitude and precision meters/feet readout.
-- **Background Reverse Geocoding**: Asynchronously resolves street addresses and landmarks via OpenStreetMap Nominatim with graceful offline fallback.
+- **Kotlin 2.0** + **Jetpack Compose** (Material 3, Compose BOM 2024.10.01)
+- **Room** — places, categories, live-share sessions
+- **DataStore** — app settings (coordinate format, units, default category)
+- **Google Play Services FusedLocationProvider** — live high-accuracy GPS
+- **osmdroid 6.1** — offline-capable OpenStreetMap + Esri satellite layers
+- **ZXing** — live-share and app QR codes
+- **Coil** — photo attachments
+- **Nominatim** — background reverse geocoding (graceful offline fallback)
 
-### 2. Rich Place Details & Media Management
-- **Photo Attachments**: Directly capture or upload photos with client-side preview, change, and removal.
-- **Comprehensive Fields**: Place title, multiline notes, contact phone number (with direct `tel:` dialer), editable address with one-tap re-geocode, and geographic telemetry readout (DD, DMS, DDM, UTM, altitude, accuracy, and timestamps).
-- **Category & Group CRUD**: Organize saved places into customized categories with dedicated color palettes and instant assignment chips.
+## Features
 
-### 3. Interactive Map & List View
-- **Dual Tab Interface**: Seamlessly switch between **List** and **Map** views.
-- **OpenStreetMap (Leaflet)**: Free, open-source worldwide map rendering with zero API keys or billing required.
-- **Category-Colored Markers & Bounding Fit**: Markers represent saved waypoints with category colors; tapping a marker opens a detail popup. "Fit all markers" and "Center on GPS" buttons for smooth navigation.
-- **Instant Reactive Search**: Filter places instantaneously by name, address, notes, or category chips, with flexible sorting (Newest, Oldest, Name A-Z, Distance from current location).
+- **One-tap position save** with live GPS lock, accuracy, altitude, and reverse geocoded address
+- **Manual coordinate entry** for offline/test use
+- **Rich place details**: name, address (re-geocode), phone (dialer), notes, photos, favorite
+- **Categories**: color-coded CRUD with instant chips and a default category
+- **Places list**: instant search, category filter, sort (distance, date, name)
+- **Interactive map**: osmdroid with standard/satellite layers, category-colored markers, fit-bounds, center-on-GPS
+- **Navigation hand-off** via geo URI (Google/OSM)
+- **Sharing**: formatted text share sheet, copy coordinates/link
+- **Backup & Restore**: GPX 1.1, KML 2.2, CSV, JSON via Android SAF
+- **Time-limited live location sharing**: TTL countdown, live QR, copy/send link (token-based, no account needed)
+- **Settings**: coordinate format (DD/DMS/DDM/UTM), metric/imperial, default category, app QR
+- **Privacy**: all data stored on-device; backups disabled by default
 
-### 4. Navigation & Multi-Format Backup / Restore
-- **Navigation Hand-off**: Opens directions in Google Maps, Apple Maps, or OpenStreetMap in a new tab.
-- **Single Place Sharing**: Share places as formatted text, copy raw coordinates in one tap, or use the Web Share API.
-- **Universal Backup & Restore**:
-  - **GPX 1.1**: Standard GPS Exchange XML format for outdoor navigators and handheld GPS units.
-  - **KML 2.2**: Keyhole Markup Language for Google Earth and GIS software.
-  - **CSV**: Spreadsheet-compatible RFC-4180 format.
-  - **JSON Full Backup**: Lossless export and restoration of all places, categories, and metadata.
-
-### 5. Time-Limited Live Location Sharing
-- **Self-Terminating TTL**: Select durations of 15 min, 30 min, 1 hour, 4 hours, or 8 hours with countdown timer.
-- **Live QR Code**: Generates a shareable QR code for camera scanning.
-- **Unguessable Tokens**: Public viewer links utilize unique tokens without requiring user accounts or third-party servers.
-
-### 6. Settings, Customization & Privacy
-- **Coordinate Formats**: Decimal Degrees (DD), Degrees, Minutes, Seconds (DMS), Degrees & Decimal Minutes (DDM), or Universal Transverse Mercator (UTM).
-- **Unit Systems**: Metric (meters, kilometers) or Imperial (feet, miles).
-- **Default Category**: Auto-assigns chosen category to new one-tap saves.
-- **100% On-Device Privacy**: All waypoints, notes, coordinates, and images remain strictly on local storage.
-- **Data Purge Safeguard**: Full database reset with double-confirmation protection.
-
-## 🏗️ Architecture & Technology Stack
-
-- **UI Framework**: React 18 with TypeScript.
-- **Styling**: Tailwind CSS v4.
-- **Bundler**: Vite.
-- **Mapping Engine**: Leaflet with OpenStreetMap tiles.
-- **Icons**: Lucide React.
-- **QR Generator**: QRCode.js.
-- **Local Persistence**: Browser LocalStorage & IndexedDB with initial sample seeds.
-
-## 🚀 Running the App
+## Build
 
 ```bash
-npm install
-npm run dev
+# JDK 21 required
+./gradlew :app:assembleDebug
+# APK at app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Built for Google AI Studio Web Preview listening on port 3000 (`0.0.0.0:3000`).
+Unit tests for geo math and export/import codecs:
 
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+## Permissions
+
+- `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` — required for GPS
+- `ACCESS_BACKGROUND_LOCATION` — declared for future foreground service use
+- `INTERNET` — map tiles and reverse geocoding
+
+## Architecture
+
+```
+app/src/main/java/com/simodev/gpspositionsaver/
+├── MainActivity.kt        # single Compose activity
+├── GpsSaverApp.kt         # Application: manual DI container
+├── AppContainer.kt
+├── data/
+│   ├── model/             # Place, Group, ShareSession, settings enums
+│   ├── db/                # Room database + DAOs
+│   ├── PlacesRepository.kt
+│   └── SettingsStore.kt   # DataStore
+├── location/              # LocationRepository, GeocoderClient
+├── geo/                   # GeoUtils (coordinates, distance, bearing, UTM/DMS)
+├── io/                    # GPX/KML/CSV/JSON codecs + import parser
+├── platform/              # QR, share/copy/dial, SAF transfers, photo store
+└── ui/
+    ├── theme/
+    ├── components/        # cards, chips, dialogs, OsmMapView
+    ├── AppViewModel.kt    # single source of truth for UI state
+    ├── GpsApp.kt          # scaffold + navigation + permissions
+    └── screens/           # Home, Places, Map, Live, Settings, PlaceDetail
+```
