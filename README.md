@@ -36,6 +36,9 @@ Fully **native Android** — Kotlin + Jetpack Compose. No WebView.
 # JDK 21 required
 ./gradlew :app:assembleDebug
 # APK at app/build/outputs/apk/debug/app-debug.apk
+
+./gradlew :app:assembleRelease
+# APK at app/build/outputs/apk/release/app-release.apk
 ```
 
 Unit tests for geo math and export/import codecs:
@@ -43,6 +46,44 @@ Unit tests for geo math and export/import codecs:
 ```bash
 ./gradlew :app:testDebugUnitTest
 ```
+
+Both build types are signed with `debug.keystore` at the repo root (git-ignored,
+credentials `android` / `androiddebugkey`). The debug key is public and intended
+for sideloading only — **do not upload these APKs to Google Play**.
+
+## Continuous integration
+
+`.github/workflows/android.yml` builds and tests on GitHub's runners. It runs on
+pushes and pull requests to `main`, on any `v*` tag, and on demand via
+*Actions → Android CI → Run workflow*.
+
+Each run:
+
+1. installs JDK 21 and the Android 35 platform + build-tools,
+2. **restores or generates `debug.keystore`** (see below),
+3. runs `:app:testDebugUnitTest`,
+4. builds the debug and release APKs,
+5. verifies every APK signature with `apksigner`, and
+6. uploads them as the `gps-position-saver-apk` artifact (30-day retention).
+   Tag pushes additionally publish a GitHub Release with the APKs attached.
+
+### Signing from CI
+
+`debug.keystore` is deliberately kept out of version control, so the workflow
+needs it another way. Set a repository secret to keep APK signatures stable:
+
+```bash
+# 1. Encode your existing local keystore (Git Bash / macOS / Linux)
+base64 -w0 debug.keystore
+```
+
+2. Add it as repository secret `ANDROID_KEYSTORE_BASE64`
+   (*Settings → Secrets and variables → Actions → New repository secret*).
+
+With that secret set, CI-built APKs carry the **same signature as your local
+builds** and upgrade straight over an existing install. Without it the workflow
+still succeeds, but generates a throwaway key each run — those APKs install fine
+yet cannot upgrade an APK from a previous run, so you must uninstall first.
 
 ## Permissions
 

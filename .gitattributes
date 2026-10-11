@@ -1,0 +1,16 @@
+# Gradle wrapper and shell scripts must keep LF endings, or Linux runners
+# fail with "bad interpreter" before Gradle ever starts.
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows batch files need CRLF.
+*.bat text eol=crlf
+
+# Build outputs and keys — never normalize line endings inside binaries.
+*.apk binary
+*.jar binary
+*.keystore binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary

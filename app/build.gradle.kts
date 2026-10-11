@@ -23,6 +23,9 @@ android {
     }
 
     signingConfigs {
+        // Shared sideloading key. debug.keystore is git-ignored; CI generates or
+        // restores it (see .github/workflows/android.yml). Credentials match the
+        // stock Android debug keystore so a local and a CI build share one identity.
         create("debugConfig") {
             storeFile = file("${rootDir}/debug.keystore")
             storePassword = "android"
@@ -41,6 +44,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Signed with the sideloading key so `assembleRelease` emits an
+            // installable APK. Do NOT upload this to Google Play — the debug key
+            // is public and not accepted for store distribution.
+            signingConfig = signingConfigs.getByName("debugConfig")
         }
     }
 
