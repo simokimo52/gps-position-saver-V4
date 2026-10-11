@@ -1,9 +1,8 @@
 package com.simodev.gpspositionsaver
 
 import android.content.Context
+import android.location.Location
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -44,10 +43,10 @@ data class Place(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(location: Location?) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var places by remember { mutableStateOf(listOf<Place>()) }
-    
+
     val categories = listOf(
         Category(1, "Home", "#4CAF50"),
         Category(2, "Work", "#1E88E5"),
@@ -56,12 +55,19 @@ fun MainScreen() {
     )
     var selectedCategory by remember { mutableIntStateOf(1) }
     var noteInput by remember { mutableStateOf("") }
-    
-    val currentLat = 35.621645
-    val currentLng = -5.282466
-    val currentAcc = 4.5f
+
+    val currentLat = location?.latitude ?: 0.0
+    val currentLng = location?.longitude ?: 0.0
+    val currentAcc = location?.accuracy ?: 0f
+    val isGpsActive = location != null
+    val lastUpdateStr = if (location != null) {
+        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(location.time))
+    } else {
+        "Waiting..."
+    }
 
     val savePlace = {
+        if (!isGpsActive) return@savePlace
         val newPlace = Place(
             id = System.currentTimeMillis(),
             name = "Waypoint (${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())})",
@@ -79,7 +85,17 @@ fun MainScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("GPS Position Saver (100% Kotlin Native)", fontWeight = FontWeight.Bold, fontSize = 15.sp) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("GPS Position Saver", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(if (isGpsActive) Color(0xFF4CAF50) else Color(0xFFF44336), shape = RoundedCornerShape(50))
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF0D47A1),
                     titleContentColor = Color.White
@@ -121,6 +137,8 @@ fun MainScreen() {
                     lat = currentLat,
                     lng = currentLng,
                     accuracy = currentAcc,
+                    isGpsActive = isGpsActive,
+                    lastUpdateStr = lastUpdateStr,
                     categories = categories,
                     selectedCategory = selectedCategory,
                     onSelectCategory = { selectedCategory = it },
@@ -143,6 +161,8 @@ fun SaveTab(
     lat: Double,
     lng: Double,
     accuracy: Float,
+    isGpsActive: Boolean,
+    lastUpdateStr: String,
     categories: List<Category>,
     selectedCategory: Int,
     onSelectCategory: (Int) -> Unit,
@@ -170,16 +190,20 @@ fun SaveTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Badge(containerColor = Color(0xFFE8F5E9)) {
-                        Text("GPS Locked (100% Offline)", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold, modifier = Modifier.padding(6.dp))
+                    val badgeColor = if (isGpsActive) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                    val badgeTextColor = if (isGpsActive) Color(0xFF2E7D32) else Color(0xFFC62828)
+                    val badgeText = if (isGpsActive) "GPS Active" else "Waiting for GPS"
+                    Badge(containerColor = badgeColor) {
+                        Text(badgeText, color = badgeTextColor, fontWeight = FontWeight.Bold, modifier = Modifier.padding(6.dp))
                     }
-                    Text("Â±${accuracy}m", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color(0xFF0D47A1))
+                    Text("±${String.format("%.1f", accuracy)}m", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color(0xFF0D47A1))
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Text("Latitude: $lat", fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = Color.DarkGray)
-                Text("Longitude: $lng", fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = Color.DarkGray)
+                Text("Lat: ${String.format("%.6f", lat)}", fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = Color.DarkGray)
+                Text("Lng: ${String.format("%.6f", lng)}", fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = Color.DarkGray)
+                Text("Last Fix: $lastUpdateStr", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color.Gray)
             }
         }
 
@@ -213,7 +237,8 @@ fun SaveTab(
                 .fillMaxWidth()
                 .height(56.dp),
             shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1))
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
+            enabled = isGpsActive
         ) {
             Icon(Icons.Default.Place, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
